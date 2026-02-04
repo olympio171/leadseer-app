@@ -1,5 +1,6 @@
 import time
 import pandas as pd
+import os # <--- AJOUTE ÇA EN HAUT DU FICHIER
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -7,17 +8,38 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# Fonction qui sera appelée par ton site
 def lancer_recherche_live(ville, activite):
-    # --- CONFIGURATION HEADLESS (INVISIBLE) ---
-    # Pour un SaaS, on ne veut pas voir la fenêtre Chrome s'ouvrir
+    print(f"🕵️‍♂️ Démarrage du scan pour {ville}...")
+
+    # --- CONFIGURATION BLINDÉE (CLOUD & LOCAL) ---
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless") # Active ça pour ne pas voir le navigateur
+    # Arguments obligatoires pour le Cloud (Linux)
+    options.add_argument("--headless") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--lang=fr")
-    
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080") # Parfois ça aide pour le rendu
+
+    # DÉTECTION AUTOMATIQUE DE L'ENVIRONNEMENT
+    # Sur Streamlit Cloud, Chromium est installé ici : /usr/bin/chromium
+    if os.path.exists("/usr/bin/chromium"):
+        options.binary_location = "/usr/bin/chromium"
+        # On utilise le driver système installé par packages.txt
+        service = Service("/usr/bin/chromedriver")
+    else:
+        # Sur ton PC Windows, on laisse webdriver_manager gérer tout seul
+        service = Service(ChromeDriverManager().install())
+
+    # Lancement du navigateur
+    try:
+        driver = webdriver.Chrome(service=service, options=options)
+    except Exception as e:
+        print(f"❌ Erreur critique au lancement de Chrome : {e}")
+        return pd.DataFrame() # Retourne vide si crash
+
+    # --- LA SUITE RESTE PAREILLE ---
+    query = f"{activite} {ville}"
+    # ... le reste de ton code ...
     
     # On construit la recherche
     query = f"{activite} {ville}"
