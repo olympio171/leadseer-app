@@ -65,3 +65,11 @@ if bouton_recherche:
                 st.error("Aucun résultat trouvé. Essayez une autre ville.")
     else:
         st.warning("Veuillez remplir la ville et l'activité.")
+
+# Dans app.py
+df = lancer_recherche_live(ville, activite)
+
+# --- DEBUG : AFFICHER LA PREUVE ---
+import os
+if os.path.exists("debug_view.png"):
+    st.image("debug_view.png", caption="Ce que le robot a vu")

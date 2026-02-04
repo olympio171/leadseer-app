@@ -60,7 +60,7 @@ def lancer_recherche_live(ville, activite):
 
         # --- DEBUG VISUEL (OPTIONNEL) ---
         # Si ça ne marche toujours pas, décommente la ligne ci-dessous pour voir ce que le robot voit
-        # driver.save_screenshot("debug_view.png") 
+        driver.save_screenshot("debug_view.png") 
 
         # Scroll pour charger les résultats
         try:
