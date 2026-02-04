@@ -6,11 +6,9 @@ from backend_scraper import lancer_recherche_live
 # --- CONFIGURATION ---
 st.set_page_config(page_title="LeadSeer Pro", page_icon="🚀", layout="wide")
 
-# --- RÉGLAGES ---
 LIEN_ABONNEMENT = "https://buy.stripe.com/TON_LIEN_ICI"
 CODE_SECRET = "LEAD2026" 
 
-# --- SESSION ---
 if "est_connecte" not in st.session_state:
     st.session_state["est_connecte"] = False
 
@@ -19,7 +17,6 @@ with st.sidebar:
     st.title("💎 Espace Membre")
     if not st.session_state["est_connecte"]:
         st.write("Entrez votre code d'accès :")
-        # CORRECTION ICI : Plus de type="password" pour éviter les bugs du navigateur
         input_code = st.text_input("Code (ex: LEAD2026)", key="login_field")
         
         if st.button("Se connecter"):
@@ -37,7 +34,7 @@ with st.sidebar:
             st.session_state["est_connecte"] = False
             st.rerun()
 
-# --- CORPS PRINCIPAL ---
+# --- CORPS ---
 st.title("🚀 LeadSeer")
 st.markdown("#### Trouvez les numéros directs de vos futurs clients.")
 
@@ -52,7 +49,7 @@ with col3:
 st.write("") 
 bouton = st.button("🔎 LANCER LE SCAN (AVEC TÉLÉPHONES)", type="primary", use_container_width=True)
 
-# --- FONCTION EXCEL JOLI ---
+# --- EXCEL ---
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -61,20 +58,23 @@ def to_excel(df):
         worksheet = writer.sheets['Leads']
         header_format = workbook.add_format({'bold': True, 'fg_color': '#D7E4BC', 'border': 1})
         for i, col in enumerate(df.columns):
-            worksheet.set_column(i, i, 25) # Largeur fixe propre
+            worksheet.set_column(i, i, 25)
             worksheet.write(0, i, col, header_format)
     return output.getvalue()
 
 # --- LOGIQUE ---
 if bouton:
     if ville and activite:
-        # On prévient que c'est plus lent car on récupère les TELS
         message = f"📡 Extraction des numéros pour {nb_leads} leads à {ville}..."
         
         with st.spinner(message):
             df, logs = lancer_recherche_live(ville, activite, limit=nb_leads)
             
             if not df.empty:
+                # S'assurer que la colonne Téléphone existe pour éviter les bugs
+                if "Téléphone" not in df.columns:
+                    df["Téléphone"] = "Non trouvé"
+
                 # --- CAS PRO ---
                 if st.session_state["est_connecte"]:
                     st.balloons()
@@ -94,11 +94,9 @@ if bouton:
                 else:
                     st.warning(f"Version Gratuite : {len(df)} leads détectés.")
                     
-                    # On floute les numéros de téléphone pour les gratuits !
+                    # On copie et on masque
                     df_gratuit = df.copy()
-                    # On garde les 3 premiers noms mais on cache TOUS les téléphones
-                    if "Téléphone" in df_gratuit.columns:
-                        df_gratuit["Téléphone"] = "🔒 06 ** ** ** **"
+                    df_gratuit["Téléphone"] = df_gratuit["Téléphone"].apply(lambda x: "🔒 06 ** ** ** **" if x != "Non trouvé" else "Non trouvé")
                     
                     st.markdown("### 🔓 Aperçu (Numéros masqués)")
                     st.dataframe(df_gratuit.head(3), use_container_width=True)
