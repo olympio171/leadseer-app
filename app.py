@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import io # <--- Nécessaire pour créer le fichier Excel en mémoire
+import io 
 from backend_scraper import lancer_recherche_live 
 
 # --- CONFIGURATION ---
@@ -18,9 +18,12 @@ if "est_connecte" not in st.session_state:
 with st.sidebar:
     st.title("💎 Espace Membre")
     if not st.session_state["est_connecte"]:
-        input_code = st.text_input("Code d'accès", type="password")
+        st.write("Entrez votre code d'accès :")
+        # CORRECTION ICI : Plus de type="password" pour éviter les bugs du navigateur
+        input_code = st.text_input("Code (ex: LEAD2026)", key="login_field")
+        
         if st.button("Se connecter"):
-            if input_code == CODE_SECRET:
+            if input_code.strip() == CODE_SECRET:
                 st.session_state["est_connecte"] = True
                 st.rerun()
             else:
@@ -36,71 +39,49 @@ with st.sidebar:
 
 # --- CORPS PRINCIPAL ---
 st.title("🚀 LeadSeer")
-st.markdown("#### Le moteur de recherche de clients pour agences.")
+st.markdown("#### Trouvez les numéros directs de vos futurs clients.")
 
 col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
-    ville = st.text_input("Ville cible", placeholder="Ex: Lyon")
+    ville = st.text_input("Ville cible", placeholder="Ex: Bordeaux")
 with col2:
-    activite = st.text_input("Activité", placeholder="Ex: Plombier")
+    activite = st.text_input("Activité", placeholder="Ex: Électricien")
 with col3:
-    nb_leads = st.slider("Nombre de leads", min_value=5, max_value=50, value=10, step=5)
+    nb_leads = st.slider("Nombre de leads", min_value=5, max_value=30, value=10, step=5)
 
 st.write("") 
-bouton = st.button("🔎 LANCER LE SCAN", type="primary", use_container_width=True)
+bouton = st.button("🔎 LANCER LE SCAN (AVEC TÉLÉPHONES)", type="primary", use_container_width=True)
 
-# --- FONCTION POUR CRÉER UN BEL EXCEL ---
+# --- FONCTION EXCEL JOLI ---
 def to_excel(df):
     output = io.BytesIO()
-    # On utilise 'xlsxwriter' comme moteur
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Leads')
         workbook = writer.book
         worksheet = writer.sheets['Leads']
-        
-        # Format des en-têtes (Gras + Fond gris clair + Bordure)
-        header_format = workbook.add_format({
-            'bold': True,
-            'text_wrap': True,
-            'valign': 'top',
-            'fg_color': '#D7E4BC', # Une petite couleur pro
-            'border': 1
-        })
-
-        # On parcourt les colonnes pour ajuster la largeur (Auto-fit)
+        header_format = workbook.add_format({'bold': True, 'fg_color': '#D7E4BC', 'border': 1})
         for i, col in enumerate(df.columns):
-            # On calcule la largeur max entre le nom de la colonne et le contenu le plus long
-            max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
-            # On limite quand même à 50 pour pas que ce soit géant
-            if max_len > 50: max_len = 50
-            worksheet.set_column(i, i, max_len)
-            
-            # On applique le format joli aux en-têtes
+            worksheet.set_column(i, i, 25) # Largeur fixe propre
             worksheet.write(0, i, col, header_format)
-            
     return output.getvalue()
 
 # --- LOGIQUE ---
 if bouton:
     if ville and activite:
-        message_attente = f"📡 Recherche de {nb_leads} leads à {ville}..."
-        if nb_leads > 20:
-            message_attente += " (Cela peut prendre jusqu'à 1 minute)"
-            
-        with st.spinner(message_attente):
-            
-            df, _ = lancer_recherche_live(ville, activite, limit=nb_leads)
+        # On prévient que c'est plus lent car on récupère les TELS
+        message = f"📡 Extraction des numéros pour {nb_leads} leads à {ville}..."
+        
+        with st.spinner(message):
+            df, logs = lancer_recherche_live(ville, activite, limit=nb_leads)
             
             if not df.empty:
                 # --- CAS PRO ---
                 if st.session_state["est_connecte"]:
                     st.balloons()
-                    st.success(f"💎 PRO : {len(df)} leads récupérés.")
+                    st.success(f"💎 PRO : {len(df)} leads qualifiés avec téléphone.")
                     st.dataframe(df, use_container_width=True)
                     
-                    # GÉNÉRATION DU FICHIER EXCEL PROPRE
                     excel_data = to_excel(df)
-                    
                     st.download_button(
                         label="📥 TÉLÉCHARGER LE FICHIER EXCEL (.xlsx)",
                         data=excel_data,
@@ -111,21 +92,27 @@ if bouton:
 
                 # --- CAS GRATUIT ---
                 else:
-                    st.warning(f"Version Gratuite : {len(df)} leads trouvés.")
-                    st.markdown("### 🔓 Aperçu (3 premiers)")
-                    st.dataframe(df.head(3), use_container_width=True)
+                    st.warning(f"Version Gratuite : {len(df)} leads détectés.")
+                    
+                    # On floute les numéros de téléphone pour les gratuits !
+                    df_gratuit = df.copy()
+                    # On garde les 3 premiers noms mais on cache TOUS les téléphones
+                    if "Téléphone" in df_gratuit.columns:
+                        df_gratuit["Téléphone"] = "🔒 06 ** ** ** **"
+                    
+                    st.markdown("### 🔓 Aperçu (Numéros masqués)")
+                    st.dataframe(df_gratuit.head(3), use_container_width=True)
                     
                     reste = len(df) - 3
                     if reste > 0:
-                        st.markdown(f"### 🔒 {reste} leads masqués...")
-                        df_floute = df.iloc[3:].copy()
+                        st.markdown(f"### 🔒 {reste} autres leads prêts...")
+                        df_floute = df_gratuit.iloc[3:].copy()
                         df_floute["Nom de l'entreprise"] = "🔒 RÉSERVÉ PRO"
-                        df_floute["État"] = "🔒 BLOQUÉ"
                         st.dataframe(df_floute, use_container_width=True)
-                        st.link_button(f"🔓 DÉBLOQUER TOUT", LIEN_ABONNEMENT, type="primary")
+                        st.link_button(f"🔓 DÉBLOQUER LES NUMÉROS", LIEN_ABONNEMENT, type="primary")
 
             else:
-                st.error("Aucun résultat. Google Maps bloque peut-être, réessayez dans 1 minute.")
+                st.error("Aucun résultat. Essayez une ville plus grande.")
     else:
         st.info("Remplissez les champs.")
 
