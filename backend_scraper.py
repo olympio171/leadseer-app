@@ -43,49 +43,58 @@ def get_driver():
         service = Service(ChromeDriverManager().install())
         return webdriver.Chrome(service=service, options=chrome_options)
 
-def lancer_recherche_live(ville, activite):
+# ON MODIFIE JUSTE CETTE FONCTION :
+def lancer_recherche_live(ville, activite, limit=10): # <--- Ajout du paramètre limit
     logs = []
-    logs.append(f"🚀 Scan lancé pour {activite} à {ville}...")
+    logs.append(f"🚀 Scan lancé pour {limit} {activite}s à {ville}...")
     
     driver = None
     try:
         driver = get_driver()
-        logs.append("✅ Navigateur ouvert avec succès.")
+        logs.append("✅ Navigateur ouvert.")
         
-        # Navigation
         query = f"{activite} {ville}"
         url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
-        logs.append(f"🌍 Connexion à Maps...")
         
         driver.get(url)
-        time.sleep(3) # Pause vitale
-        
-        # Debug Photo
-        driver.save_screenshot("debug_view.png")
-        logs.append("📸 Photo de contrôle prise.")
+        time.sleep(3) 
 
-        # Extraction simple
+        # Scroll intelligent : On scroll plus si l'utilisateur veut plus de résultats
+        nb_scrolls = int(limit / 5) + 1 # Environ 1 scroll pour 5 résultats
+        try:
+            feed = driver.find_element(By.CSS_SELECTOR, "div[role='feed']")
+            for _ in range(nb_scrolls):
+                driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", feed)
+                time.sleep(1.5)
+        except:
+            logs.append("⚠️ Pas de scroll possible, on prend ce qui est visible.")
+
         elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/maps/place/']")
-        logs.append(f"🎯 {len(elements)} éléments détectés brute.")
+        logs.append(f"🎯 {len(elements)} éléments détectés (Cible : {limit}).")
         
         resultats = []
-        for i, elem in enumerate(elements[:10]):
+        # On utilise la limite choisie par l'utilisateur
+        for i, elem in enumerate(elements):
+            if len(resultats) >= limit:
+                break
             try:
                 nom = elem.get_attribute("aria-label")
                 if nom:
-                    resultats.append({"Nom": nom, "Ville": ville, "État": "✅ Trouvé"})
+                    # On nettoie un peu les données
+                    resultats.append({
+                        "Nom de l'entreprise": nom,
+                        "Activité": activite,
+                        "Ville": ville,
+                        "État": "✅ Disponible",
+                        # "Site Web": "À vérifier" # Tu pourras ajouter ça plus tard
+                    })
             except:
-                pass
+                continue
         
         driver.quit()
-        
-        if not resultats:
-             logs.append("⚠️ Aucun résultat extrait (blocage possible).")
-             
         return pd.DataFrame(resultats), logs
 
     except Exception as e:
         logs.append(f"❌ CRASH : {str(e)}")
-        if driver:
-            driver.quit()
+        if driver: driver.quit()
         return pd.DataFrame(), logs
