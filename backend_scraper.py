@@ -49,6 +49,10 @@ def lancer_recherche_live(ville, activite):
         # Pause de sécurité pour laisser charger (le cloud est parfois lent)
         time.sleep(3)
 
+        # --- AJOUTE CA ICI ---
+        print("📸 Clic-clac ! Photo de l'écran en cours...")
+        driver.save_screenshot("debug_view.png")
+
         # Gestion Cookies (On tente de cliquer, si ça rate c'est pas grave)
         try:
             bouton = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@aria-label, 'Tout refuser')]")))
