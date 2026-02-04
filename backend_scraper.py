@@ -2,7 +2,6 @@ import time
 import pandas as pd
 import os
 import shutil
-import re # <--- NOUVEAU : Pour détecter les motifs de numéros
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -19,6 +18,7 @@ def get_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     
+    # Masque pour passer inaperçu
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     chrome_options.add_argument(f'user-agent={user_agent}')
 
@@ -35,7 +35,7 @@ def get_driver():
 
 def lancer_recherche_live(ville, activite, limit=10):
     logs = []
-    logs.append(f"🚀 Scan approfondi (Tel) : {limit} {activite}s à {ville}...")
+    logs.append(f"🚀 Scan précis (Tel) : {limit} {activite}s à {ville}...")
     
     driver = None
     try:
@@ -47,7 +47,7 @@ def lancer_recherche_live(ville, activite, limit=10):
         driver.get(url)
         time.sleep(3) 
 
-        # Scroll
+        # Scroll pour charger la liste
         try:
             feed = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, "div[role='feed']")))
             nb_scrolls = int(limit / 5) + 1
@@ -70,32 +70,49 @@ def lancer_recherche_live(ville, activite, limit=10):
                 nom = elem.get_attribute("aria-label")
                 if not nom: continue
 
-                # On clique
+                # 1. CLIC OBLIGATOIRE
                 driver.execute_script("arguments[0].click();", elem)
-                time.sleep(2) # On attend bien que le texte charge
+                
+                # 2. PAUSE CRITIQUE (Pour que le panneau de droite change !)
+                time.sleep(1.5) 
 
                 telephone = "Non trouvé"
                 
-                # --- NOUVELLE MÉTHODE : SCAN GLOBAL DU TEXTE ---
+                # 3. EXTRACTION CIBLÉE (On ne cherche QUE le bouton téléphone)
                 try:
-                    # On prend tout le texte de la page visible
-                    body_text = driver.find_element(By.TAG_NAME, "body").text
+                    # Le sélecteur magique : Google met le numéro dans 'data-item-id'
+                    # Ex: data-item-id="phone:tel:+33612345678"
+                    bouton_tel = driver.find_element(By.CSS_SELECTOR, "button[data-item-id^='phone:tel:']")
+                    raw_data = bouton_tel.get_attribute("data-item-id")
                     
-                    # On cherche un motif de numéro français (01 à 09 suivi de 8 chiffres, avec espaces ou points)
-                    # Regex : 0[1-9] suivi de 4 groupes de 2 chiffres séparés par espace, point ou tiret
-                    match = re.search(r"(?:(?:\+|00)33|0)\s*[1-9](?:[\s.-]*\d{2}){4}", body_text)
-                    
-                    if match:
-                        telephone = match.group(0)
+                    # On nettoie pour ne garder que le numéro
+                    if raw_data:
+                        telephone = raw_data.replace("phone:tel:", "").strip()
                 except:
-                    pass
+                    # Si pas de bouton "phone:tel:", on cherche le bouton avec l'icône téléphone
+                    try:
+                        # Recherche par l'icône image (souvent le cas sur desktop)
+                        imgs = driver.find_elements(By.TAG_NAME, "img")
+                        for img in imgs:
+                            src = img.get_attribute("src")
+                            # L'icône téléphone de Google contient souvent ce lien
+                            if src and "k52302" in src: 
+                                # Le numéro est souvent dans le texte du parent
+                                parent = img.find_element(By.XPATH, "./../..")
+                                text = parent.text
+                                # On vérifie vite fait si ça ressemble à un numéro
+                                if any(char.isdigit() for char in text):
+                                    telephone = text
+                                    break
+                    except:
+                        pass
 
-                # On ajoute TOUJOURS la colonne téléphone, même si vide
+                # On n'ajoute que si on a au moins le nom
                 resultats.append({
                     "Nom de l'entreprise": nom,
                     "Activité": activite,
                     "Ville": ville,
-                    "Téléphone": telephone, # Cette clé existe toujours maintenant
+                    "Téléphone": telephone,
                     "État": "✅ Qualifié"
                 })
                 
