@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import io # <--- Nécessaire pour créer le fichier Excel en mémoire
 from backend_scraper import lancer_recherche_live 
 
 # --- CONFIGURATION ---
@@ -43,24 +44,51 @@ with col1:
 with col2:
     activite = st.text_input("Activité", placeholder="Ex: Plombier")
 with col3:
-    # AJOUT DU CHOIX DU NOMBRE DE RÉSULTATS
     nb_leads = st.slider("Nombre de leads", min_value=5, max_value=50, value=10, step=5)
 
 st.write("") 
-# CORRECTION DE LA FAUTE (SCANNER)
 bouton = st.button("🔎 LANCER LE SCAN", type="primary", use_container_width=True)
+
+# --- FONCTION POUR CRÉER UN BEL EXCEL ---
+def to_excel(df):
+    output = io.BytesIO()
+    # On utilise 'xlsxwriter' comme moteur
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Leads')
+        workbook = writer.book
+        worksheet = writer.sheets['Leads']
+        
+        # Format des en-têtes (Gras + Fond gris clair + Bordure)
+        header_format = workbook.add_format({
+            'bold': True,
+            'text_wrap': True,
+            'valign': 'top',
+            'fg_color': '#D7E4BC', # Une petite couleur pro
+            'border': 1
+        })
+
+        # On parcourt les colonnes pour ajuster la largeur (Auto-fit)
+        for i, col in enumerate(df.columns):
+            # On calcule la largeur max entre le nom de la colonne et le contenu le plus long
+            max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+            # On limite quand même à 50 pour pas que ce soit géant
+            if max_len > 50: max_len = 50
+            worksheet.set_column(i, i, max_len)
+            
+            # On applique le format joli aux en-têtes
+            worksheet.write(0, i, col, header_format)
+            
+    return output.getvalue()
 
 # --- LOGIQUE ---
 if bouton:
     if ville and activite:
-        # On prévient que ça peut être long si on demande 50 leads
         message_attente = f"📡 Recherche de {nb_leads} leads à {ville}..."
         if nb_leads > 20:
             message_attente += " (Cela peut prendre jusqu'à 1 minute)"
             
         with st.spinner(message_attente):
             
-            # ON PASSE LE NOMBRE DE LEADS AU BACKEND
             df, _ = lancer_recherche_live(ville, activite, limit=nb_leads)
             
             if not df.empty:
@@ -70,16 +98,14 @@ if bouton:
                     st.success(f"💎 PRO : {len(df)} leads récupérés.")
                     st.dataframe(df, use_container_width=True)
                     
-                    # CORRECTION EXCEL (Format Français)
-                    # sep=';' pour les colonnes
-                    # encoding='utf-8-sig' pour les accents (é, è, à)
-                    csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                    # GÉNÉRATION DU FICHIER EXCEL PROPRE
+                    excel_data = to_excel(df)
                     
                     st.download_button(
-                        label="📥 TÉLÉCHARGER LA LISTE (Excel Compatible)",
-                        data=csv,
-                        file_name=f"leads_{ville}_{activite}.csv",
-                        mime="text/csv",
+                        label="📥 TÉLÉCHARGER LE FICHIER EXCEL (.xlsx)",
+                        data=excel_data,
+                        file_name=f"LeadSeer_{ville}_{activite}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary"
                     )
 
@@ -94,6 +120,7 @@ if bouton:
                         st.markdown(f"### 🔒 {reste} leads masqués...")
                         df_floute = df.iloc[3:].copy()
                         df_floute["Nom de l'entreprise"] = "🔒 RÉSERVÉ PRO"
+                        df_floute["État"] = "🔒 BLOQUÉ"
                         st.dataframe(df_floute, use_container_width=True)
                         st.link_button(f"🔓 DÉBLOQUER TOUT", LIEN_ABONNEMENT, type="primary")
 
